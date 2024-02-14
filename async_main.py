@@ -12,7 +12,7 @@ DATABASE_ROOT = "benchmarks"
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--run_name", type=str, help="The name of the run", default="cotfs")
+    parser.add_argument("--run_name", type=str, help="The name of the run", default="cotfs_mm")
     parser.add_argument("--root_dir", type=str,
                         help="The root logging directory", default="root")
     parser.add_argument("--benchmark", type=str,

@@ -1,5 +1,6 @@
 model_gpt="gpt-3.5-turbo-0125"
-max_iters="150"
+model_gpt="mistral-medium"
+max_iters="77"
 benchmark="mbpp" # Setting benchmark to "mbpp" directly
 
 run_async_main() {

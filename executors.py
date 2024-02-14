@@ -1,4 +1,6 @@
 from threading import Thread
+import multiprocessing
+import atexit
 from typing import Tuple, List, Optional
 import os
 import signal
@@ -9,6 +11,7 @@ import traceback
 
 
 cargo_harness_dir = "rust_execution"
+subprocesses = []
 
 class CompileErr:
     def __init__(self, rendered):
@@ -78,31 +81,33 @@ class PropagatingThread(Thread):
         return self.ret
     
 
-def function_with_timeout(func, args, timeout):
-    result_container = []
-
-    def wrapper():
-        result_container.append(func(*args))
-
-    thread = PropagatingThread(target=wrapper)
-    thread.start()
-    thread.join(timeout)
-
-    if thread.is_alive():
-        raise TimeoutError()
-    else:
-        return result_container[0]
-
+def run_code(code, return_dict):
+    try:
+        exec(code, {})
+        return_dict["status"] = "OK"
+    except Exception as e:
+        return_dict["output"] = str(e) + e.__class__.__name__ + traceback.format_exc()
+        return_dict["status"] = "ERROR"
 
 def execute_python(code, timeout=1):
-    status = "init"
-    try:
-        output = function_with_timeout(exec, (code, {}), timeout)
-        status = "OK"
-    except Exception as e:
-        output = str(e) + e.__class__.__name__ + traceback.format_exc()
-        status = "ERROR"
-    return  output, status
+    global subprocesses
+    manager = multiprocessing.Manager()
+    return_dict = manager.dict()
+
+    process = multiprocessing.Process(target=run_code, args=(code, return_dict))
+    process.start()
+    process.join(timeout)
+    subprocesses.append(process)
+
+    if process.is_alive():
+        process.terminate()
+        process.join()
+        return_dict["output"] = "TimeoutError"
+        return_dict["status"] = "ERROR"
+
+    output = return_dict.get("output", None)
+    status = return_dict.get("status", "init")
+    return output, status
 
 def execute_code(code, language, timeout=1):
     if language == "py":
@@ -175,22 +180,30 @@ def run_with_timeout(cmd: str, tmp_cargo_path: str, timeout: int = 5, print_debu
     Runs the given command with a timeout. Produces a tuple of stdout and stderr.
     If the command times out, returns None.
     """
-    # set up the timeout handler
+    def timeout_handler(signum, frame):
+        raise TimeoutError()
+
+    # Set up the timeout handler
     signal.signal(signal.SIGALRM, timeout_handler)
     signal.alarm(timeout)
 
-    # run the command
-    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE, cwd=tmp_cargo_path)
+    # Run the command
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=tmp_cargo_path)
+    subprocesses.append(p)  # Add the subprocess to the tracking list
+    
     try:
         out, err = p.communicate()
-        # reset the timeout handler
+        # Reset the timeout handler
         signal.alarm(0)
     except TimeoutError:
         p.kill()
+        subprocesses.remove(p)  # Remove the subprocess from the tracking list upon killing it
         return None
 
-    # decode the output
+    # Remove the subprocess from the tracking list upon successful completion
+    subprocesses.remove(p)
+
+    # Decode the output
     out = out.decode("utf-8")
     err = err.decode("utf-8")
     if print_debug:
@@ -339,3 +352,17 @@ def grab_runtime_errs(inp: str) -> List[RuntimeErr]:
 
     return failed_asserts
 
+def cleanup_subprocesses():
+    global subprocesses
+    for process in subprocesses:
+        # Check if the process is an instance of multiprocessing.Process
+        if isinstance(process, multiprocessing.Process):
+            if process.is_alive():
+                process.terminate()
+        # Check if the process is an instance of subprocess.Popen
+        elif isinstance(process, subprocess.Popen):
+            if process.poll() is None:  # If poll() returns None, the subprocess is still running
+                process.kill()
+    print("Subprocesses cleaned up")
+
+atexit.register(cleanup_subprocesses)
