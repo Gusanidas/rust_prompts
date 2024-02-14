@@ -78,7 +78,10 @@ class AsyncModelAPI(BaseModelAPI):
         model = api_args["model"]
         if model.startswith("gpt"):
             result =  await self.openai_client.chat.completions.create(**api_args)
-            result = result.choices[0].message.content
+            if "n" in api_args and api_args["n"] > 1:
+                result = [choice.message.content for choice in result.choices]
+            else:
+                result = result.choices[0].message.content
         elif model.startswith("mistral"):
             api_args["messages"] = self._mistral_message_transform(api_args["messages"])
             result = await self.mistral_client.chat(**api_args)
@@ -88,6 +91,9 @@ class AsyncModelAPI(BaseModelAPI):
         return result
 
     async def with_retry(self, api_args, max_retries=3):
+        # dont call with n > 1
+        if "n" in api_args and api_args["n"] > 1:
+            raise ValueError("call method n_with_retry instead of with_retry")
         result = None
         for retry_count in range(1, max_retries+1):
             try:
@@ -97,3 +103,11 @@ class AsyncModelAPI(BaseModelAPI):
                 print("Error: ", e)
                 time.sleep(retry_count*0.3)
         return result
+
+    async def n_with_retry(self, api_args, max_retries=3):
+        if api_args["model"].startswith("gpt") or "n" not in api_args or api_args["n"] == 1:
+            result = await self._with_retry(api_args, max_retries)
+        else:
+            result = []
+            for i in range(api_args["n"]):
+                result.append(await self._with_retry(api_args, max_retries))

@@ -120,7 +120,7 @@ def execute_code(code, language, timeout=1):
 def get_output(func: str, timeout: int = 5) -> str:
     try:
         exec(f"from typing import *\n{func}", globals())
-        output = function_with_timeout(eval, (func, globals()), timeout)
+        output = execute_python(func, timeout)
         return output
     except TimeoutError:
         return "TIMEOUT"
@@ -138,17 +138,14 @@ def get_result(func: str, problem_item: dict, language: str) -> dict:
 
 def get_result_py(func: str, problem_item: dict) -> dict:
     passes, valid, status, output, tback = True, True, "INIT", None, None
-    try:
-        func_with_tests = func+"\n"+problem_item["test"]
-        code = f"from typing import *\n{func_with_tests}"
-        output = function_with_timeout(exec, (code, globals()), 5)
-        status = "OK"
-    except TimeoutError:
+    func_with_tests = func+"\n"+problem_item["test"]
+    code = f"from typing import *\n{func_with_tests}"
+    #output = function_with_timeout(exec, (code, globals()), 5)
+    output, status = execute_python(code, 5)
+    if status == "ERROR":
         passes = False
-        status = "TIMEOUT"
-    except Exception as e:
-        tback = traceback.format_exc()
-        passes, valid, status = False, False, "exception"+str(e)+e.__class__.__name__
+        if "TimeoutError" not in output:
+            valid = False
     return {
         "name": problem_item["name"],
         "passes": passes,

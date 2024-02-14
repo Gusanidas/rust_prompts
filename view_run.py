@@ -152,7 +152,7 @@ def problem_page(results):
 
     st.button("Back", key="back2", on_click= set_problem_state, kwargs={"problem": None})
 
-default_path = "root/cotfs/"
+default_path = "root/cotfs_mm2/"
 file_path = default_path if len(sys.argv) < 2 else sys.argv[1]
 results = process_path(file_path)
 

@@ -12,7 +12,7 @@ class BaseStrategy(ABC):
 
     def post_process(self, model_output):
         code = ""
-        if "```" in model_output:
+        if model_output and "```" in model_output:
             in_code_block = False
             for line in model_output.split("\n"):
                 if "```" in line:
